@@ -1,0 +1,129 @@
+// CitySip data model
+// PostgreSQL + (optionally) PostGIS for geo search
+//
+// To enable PostGIS once your DB is up:
+//   CREATE EXTENSION IF NOT EXISTS postgis;
+//
+// For the MVP we keep lat/lng as plain floats — fast enough for
+// city-scale queries with a btree index. Swap to `geography(Point, 4326)`
+// when you’re ready to scale.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model City {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  name      String
+  state     String
+  country   String   @default("US")
+  lat       Float
+  lng       Float
+  blurb     String?
+  heroImage String?
+  places    Place[]
+  events    Event[]
+  createdAt DateTime @default(now())
+}
+
+model Place {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String
+  cityId      String
+  city        City     @relation(fields: [cityId], references: [id])
+  neighborhood String?
+  address     String
+  zip         String?
+  lat         Float
+  lng         Float
+  phone       String?
+  website     String?
+  imageUrl    String?
+  priceLevel  Int      @default(2)        // 1–4 ($, $$, $$$, $$$$)
+  rating      Float    @default(4.2)
+  reviewCount Int      @default(0)
+  vibeTags    String[] @default([])       // e.g. ["rooftop","date-night","after-work"]
+  cuisineTags String[] @default([])
+  isFeatured  Boolean  @default(false)
+  isClaimed   Boolean  @default(false)
+  isVerified  Boolean  @default(false)
+  deals       Deal[]
+  events      Event[]
+  submissions Submission[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([cityId])
+  @@index([lat, lng])
+}
+
+model Deal {
+  id          String     @id @default(cuid())
+  placeId     String
+  place       Place      @relation(fields: [placeId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  type        DealType
+  // Recurring schedule — stored as a JSON-ish array of weekday windows.
+  // e.g. [{ "day":"MON", "start":"16:00", "end":"19:00" }, ...]
+  schedule    Json
+  startsAt    DateTime?  // for one-off deals
+  endsAt      DateTime?
+  priceHint   String?    // "$5 cocktails", "Half-off apps"
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([placeId])
+}
+
+enum DealType {
+  FOOD
+  DRINK
+  BOTH
+  EVENT
+}
+
+model Event {
+  id          String   @id @default(cuid())
+  placeId     String?
+  place       Place?   @relation(fields: [placeId], references: [id])
+  cityId      String
+  city        City     @relation(fields: [cityId], references: [id])
+  title       String
+  description String?
+  category    String   // trivia | live-music | karaoke | comedy | sports | networking | rooftop
+  startsAt    DateTime
+  endsAt      DateTime?
+  isFree      Boolean  @default(true)
+  imageUrl    String?
+  createdAt   DateTime @default(now())
+
+  @@index([cityId, startsAt])
+}
+
+model Submission {
+  id        String   @id @default(cuid())
+  placeId   String?
+  place     Place?   @relation(fields: [placeId], references: [id])
+  type      String   // new-place | update-deal | menu-photo | report-error
+  payload   Json
+  status    String   @default("pending") // pending | approved | rejected
+  createdAt DateTime @default(now())
+}
+
+model BusinessClaim {
+  id        String   @id @default(cuid())
+  placeId   String
+  email     String
+  fullName  String
+  message   String?
+  status    String   @default("pending")
+  createdAt DateTime @default(now())
+}
