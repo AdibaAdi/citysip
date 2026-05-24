@@ -1,12 +1,11 @@
-// CitySip data model
-// PostgreSQL + (optionally) PostGIS for geo search
+// CitySip data model — production schema
+// PostgreSQL (+ optional PostGIS later for geo search)
 //
 // To enable PostGIS once your DB is up:
 //   CREATE EXTENSION IF NOT EXISTS postgis;
 //
-// For the MVP we keep lat/lng as plain floats — fast enough for
-// city-scale queries with a btree index. Swap to `geography(Point, 4326)`
-// when you’re ready to scale.
+// lat/lng are plain floats — fast enough for city-scale queries with a
+// btree index. Swap to `geography(Point, 4326)` when you outgrow that.
 
 generator client {
   provider = "prisma-client-js"
@@ -30,57 +29,75 @@ model City {
   places    Place[]
   events    Event[]
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Place {
-  id          String   @id @default(cuid())
-  slug        String   @unique
-  name        String
-  cityId      String
-  city        City     @relation(fields: [cityId], references: [id])
+  id           String   @id @default(cuid())
+  slug         String   @unique
+  name         String
+  cityId       String
+  city         City     @relation(fields: [cityId], references: [id])
   neighborhood String?
-  address     String
-  zip         String?
-  lat         Float
-  lng         Float
-  phone       String?
-  website     String?
-  imageUrl    String?
-  priceLevel  Int      @default(2)        // 1–4 ($, $$, $$$, $$$$)
-  rating      Float    @default(4.2)
-  reviewCount Int      @default(0)
-  vibeTags    String[] @default([])       // e.g. ["rooftop","date-night","after-work"]
-  cuisineTags String[] @default([])
-  isFeatured  Boolean  @default(false)
-  isClaimed   Boolean  @default(false)
-  isVerified  Boolean  @default(false)
+  address      String
+  zip          String?
+  lat          Float
+  lng          Float
+  phone        String?
+  website      String?
+  imageUrl     String?
+  priceLevel   Int      @default(2) // 1-4 ($, $$, $$$, $$$$)
+  rating       Float    @default(4.2)
+  reviewCount  Int      @default(0)
+  vibeTags     String[] @default([]) // ["rooftop","date-night","after-work"]
+  cuisineTags  String[] @default([]) // doubles as categories
+  isFeatured   Boolean  @default(false)
+  isClaimed    Boolean  @default(false)
+  isVerified   Boolean  @default(false)
+
+  // Provenance — set when a row was imported from an external provider.
+  source         String? // "foursquare" | "googlePlaces" | "yelp" | "manual" | "submission"
+  sourceId       String? // the provider's own id for this venue
+  confidenceScore Float? // 0-1, importer's confidence the data is good
+  lastSyncedAt   DateTime?
+
   deals       Deal[]
   events      Event[]
   submissions Submission[]
+  claims      BusinessClaim[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  @@unique([source, sourceId])
   @@index([cityId])
   @@index([lat, lng])
+  @@index([isVerified])
 }
 
 model Deal {
-  id          String     @id @default(cuid())
+  id          String    @id @default(cuid())
   placeId     String
-  place       Place      @relation(fields: [placeId], references: [id], onDelete: Cascade)
+  place       Place     @relation(fields: [placeId], references: [id], onDelete: Cascade)
   title       String
   description String?
   type        DealType
-  // Recurring schedule — stored as a JSON-ish array of weekday windows.
+  // Recurring schedule — JSON array of weekday windows.
   // e.g. [{ "day":"MON", "start":"16:00", "end":"19:00" }, ...]
   schedule    Json
-  startsAt    DateTime?  // for one-off deals
+  startsAt    DateTime? // for one-off deals
   endsAt      DateTime?
-  priceHint   String?    // "$5 cocktails", "Half-off apps"
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  priceHint   String? // "$5 cocktails", "Half-off apps" — the human-readable price text
+
+  // Verification + provenance — deal data is the trust-critical part of CitySip.
+  verified        Boolean @default(false)
+  source          String  @default("manual") // manual | submission | business | import
+  confidenceScore Float? // 0-1
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([placeId])
+  @@index([verified])
 }
 
 enum DealType {
@@ -98,13 +115,26 @@ model Event {
   city        City     @relation(fields: [cityId], references: [id])
   title       String
   description String?
-  category    String   // trivia | live-music | karaoke | comedy | sports | networking | rooftop
+  category    String // trivia | live-music | karaoke | comedy | sports | networking | rooftop
   startsAt    DateTime
   endsAt      DateTime?
   isFree      Boolean  @default(true)
   imageUrl    String?
-  createdAt   DateTime @default(now())
 
+  // Filled in for externally imported events (e.g. Ticketmaster).
+  venueName    String?
+  address      String?
+  lat          Float?
+  lng          Float?
+  url          String?
+  source       String? // "ticketmaster" | "manual"
+  sourceId     String?
+  lastSyncedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([source, sourceId])
   @@index([cityId, startsAt])
 }
 
@@ -112,18 +142,23 @@ model Submission {
   id        String   @id @default(cuid())
   placeId   String?
   place     Place?   @relation(fields: [placeId], references: [id])
-  type      String   // new-place | update-deal | menu-photo | report-error
+  type      String // new-place | update-deal | menu-photo | report-error
   payload   Json
   status    String   @default("pending") // pending | approved | rejected
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model BusinessClaim {
   id        String   @id @default(cuid())
-  placeId   String
+  placeId   String?
+  place     Place?   @relation(fields: [placeId], references: [id])
   email     String
   fullName  String
+  venueName String?
   message   String?
-  status    String   @default("pending")
+  payload   Json? // any extra fields from the claim form
+  status    String   @default("pending") // pending | approved | rejected
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

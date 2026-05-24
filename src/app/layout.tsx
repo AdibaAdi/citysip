@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -7,13 +7,16 @@ export const metadata: Metadata = {
   title: "CitySip — Find the best happy hours in your city, before they end",
   description:
     "CitySip helps you discover food deals, drink specials, after-work events, and rooftop spots in 15+ U.S. cities — with live deal timers and AI-powered search.",
-  metadataBase: new URL("https://citysip.app"),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://citysip.app"),
   openGraph: {
     title: "CitySip — Sip the city. Find the hour.",
     description:
       "Live happy hours, drink deals & after-work events in Chicago, NYC, SF, Raleigh, Sac & more.",
     type: "website"
-  },
+  }
+};
+
+export const viewport: Viewport = {
   themeColor: "#0a0a0c"
 };
 

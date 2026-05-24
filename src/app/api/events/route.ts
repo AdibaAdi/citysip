@@ -4,6 +4,9 @@ import { listEvents } from "@/lib/db";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const citySlug = req.nextUrl.searchParams.get("citySlug") ?? undefined;
+  const citySlug =
+    req.nextUrl.searchParams.get("citySlug") ??
+    req.nextUrl.searchParams.get("city") ??
+    undefined;
   return NextResponse.json({ events: await listEvents(citySlug) });
 }

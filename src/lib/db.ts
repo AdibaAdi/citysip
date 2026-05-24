@@ -1,44 +1,32 @@
 /**
- * CitySip data layer.
+ * CitySip public data layer.
  *
- * If DATABASE_URL is set we use Prisma. Otherwise we transparently
- * fall back to in-memory mock data so the app boots with zero setup.
+ * - When DATABASE_URL is set, all reads/writes go through Prisma/Postgres.
+ * - When DATABASE_URL is missing AND we are in development, the app
+ *   transparently falls back to bundled mock data so it boots with zero
+ *   setup. In production a missing DATABASE_URL throws (see prisma.ts).
  *
- * Every public function returns the same shape regardless of source.
+ * Every exported function returns the same shape regardless of source.
  */
 import type {
   City, Place, Deal, Event,
   PlaceWithDeals, SearchFilters
 } from "@/types";
 import { CITIES, PLACES, DEALS, EVENTS } from "@/data/seed-data";
-import {
-  haversineKm, placeLiveStatus, rankScore
-} from "@/lib/utils";
-
-const useDb = !!process.env.DATABASE_URL;
-
-let prisma: any = null;
-async function getPrisma() {
-  if (!useDb) return null;
-  if (prisma) return prisma;
-  const { PrismaClient } = await import("@prisma/client");
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  prisma = (globalThis as any)._prisma ?? new PrismaClient();
-  if (process.env.NODE_ENV !== "production") (globalThis as any)._prisma = prisma;
-  return prisma;
-}
+import { haversineKm, placeLiveStatus, rankScore } from "@/lib/utils";
+import { getPrismaOrNull } from "@/lib/prisma";
 
 /* ─────────────────────────────────────────────────────────────────── */
 /*  Cities                                                              */
 /* ─────────────────────────────────────────────────────────────────── */
 export async function listCities(): Promise<City[]> {
-  const p = await getPrisma();
+  const p = getPrismaOrNull();
   if (p) return p.city.findMany({ orderBy: { name: "asc" } });
   return [...CITIES].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function getCityBySlug(slug: string): Promise<City | null> {
-  const p = await getPrisma();
+  const p = getPrismaOrNull();
   if (p) return p.city.findUnique({ where: { slug } });
   return CITIES.find((c) => c.slug === slug) ?? null;
 }
@@ -47,13 +35,16 @@ export async function getCityBySlug(slug: string): Promise<City | null> {
 /*  Places + deals                                                      */
 /* ─────────────────────────────────────────────────────────────────── */
 async function rawPlaces(): Promise<{ places: Place[]; deals: Deal[] }> {
-  const p = await getPrisma();
+  const p = getPrismaOrNull();
   if (p) {
     const [places, deals] = await Promise.all([
       p.place.findMany(),
       p.deal.findMany()
     ]);
-    return { places, deals: deals.map((d: any) => ({ ...d, schedule: d.schedule })) };
+    return {
+      places: places as unknown as Place[],
+      deals: deals.map((d: any) => ({ ...d, schedule: d.schedule })) as unknown as Deal[]
+    };
   }
   return { places: PLACES, deals: DEALS };
 }
@@ -98,6 +89,11 @@ export async function searchPlaces(filters: SearchFilters): Promise<PlaceWithDea
   if (filters.citySlug) {
     const city = citiesBySlug.get(filters.citySlug);
     if (city) candidates = candidates.filter((p) => p.cityId === city.id);
+  }
+
+  if (filters.neighborhood) {
+    const n = filters.neighborhood.toLowerCase();
+    candidates = candidates.filter((p) => p.neighborhood?.toLowerCase().includes(n));
   }
 
   if (filters.q) {
@@ -160,19 +156,14 @@ export async function searchPlaces(filters: SearchFilters): Promise<PlaceWithDea
       const bx = b.liveStatus.active ? b.liveStatus.endsInMin ?? Infinity : Infinity;
       return ax - bx;
     }
-    // best-match
     const sa = rankScore({
-      rating: a.rating,
-      isActive: a.liveStatus.active,
-      endsInMin: a.liveStatus.endsInMin,
-      isFeatured: a.isFeatured,
+      rating: a.rating, isActive: a.liveStatus.active,
+      endsInMin: a.liveStatus.endsInMin, isFeatured: a.isFeatured,
       distanceKm: a.distanceKm
     });
     const sb = rankScore({
-      rating: b.rating,
-      isActive: b.liveStatus.active,
-      endsInMin: b.liveStatus.endsInMin,
-      isFeatured: b.isFeatured,
+      rating: b.rating, isActive: b.liveStatus.active,
+      endsInMin: b.liveStatus.endsInMin, isFeatured: b.isFeatured,
       distanceKm: b.distanceKm
     });
     return sb - sa;
@@ -190,14 +181,14 @@ export async function getPlaceById(id: string): Promise<PlaceWithDeals | null> {
 /*  Events                                                              */
 /* ─────────────────────────────────────────────────────────────────── */
 export async function listEvents(citySlug?: string): Promise<(Event & { cityName?: string; placeName?: string })[]> {
-  const p = await getPrisma();
+  const p = getPrismaOrNull();
   const cities = await listCities();
   const cityById = new Map(cities.map((c) => [c.id, c]));
   let raw: Event[];
   let places: Place[];
   if (p) {
-    raw = await p.event.findMany({ orderBy: { startsAt: "asc" } });
-    places = await p.place.findMany();
+    raw = (await p.event.findMany({ orderBy: { startsAt: "asc" } })) as unknown as Event[];
+    places = (await p.place.findMany()) as unknown as Place[];
   } else {
     raw = EVENTS;
     places = PLACES;
@@ -211,14 +202,13 @@ export async function listEvents(citySlug?: string): Promise<(Event & { cityName
   return evts.map((e) => ({
     ...e,
     cityName: cityById.get(e.cityId)?.name,
-    placeName: e.placeId ? placeById.get(e.placeId)?.name : undefined
+    placeName: e.placeId ? placeById.get(e.placeId)?.name : e.venueName ?? undefined
   }));
 }
 
 /* ─────────────────────────────────────────────────────────────────── */
-/*  Submissions                                                          */
+/*  Submissions  (persisted to DB; in-memory only in dev w/o a DB)       */
 /* ─────────────────────────────────────────────────────────────────── */
-// In mock mode we just collect into an in-memory store; in DB mode we persist.
 const mockSubmissions: any[] = [];
 
 export async function createSubmission(input: {
@@ -226,10 +216,10 @@ export async function createSubmission(input: {
   placeId?: string;
   payload: Record<string, unknown>;
 }) {
-  const p = await getPrisma();
+  const p = getPrismaOrNull();
   if (p) {
     return p.submission.create({
-      data: { type: input.type, placeId: input.placeId, payload: input.payload }
+      data: { type: input.type, placeId: input.placeId ?? null, payload: input.payload as any }
     });
   }
   const record = {
@@ -241,15 +231,63 @@ export async function createSubmission(input: {
 }
 
 export async function listSubmissions() {
-  const p = await getPrisma();
-  if (p) return p.submission.findMany({ orderBy: { createdAt: "desc" }, take: 100 });
+  const p = getPrismaOrNull();
+  if (p) return p.submission.findMany({ orderBy: { createdAt: "desc" }, take: 200 });
   return mockSubmissions;
 }
 
 export async function updateSubmissionStatus(id: string, status: "approved" | "rejected") {
-  const p = await getPrisma();
+  const p = getPrismaOrNull();
   if (p) return p.submission.update({ where: { id }, data: { status } });
   const idx = mockSubmissions.findIndex((s) => s.id === id);
   if (idx >= 0) mockSubmissions[idx].status = status;
   return mockSubmissions[idx];
+}
+
+/* ─────────────────────────────────────────────────────────────────── */
+/*  Business claims  (persisted to DB; in-memory only in dev w/o a DB)   */
+/* ─────────────────────────────────────────────────────────────────── */
+const mockClaims: any[] = [];
+
+export async function createBusinessClaim(input: {
+  placeId?: string;
+  email: string;
+  fullName: string;
+  venueName?: string;
+  message?: string;
+  payload?: Record<string, unknown>;
+}) {
+  const p = getPrismaOrNull();
+  if (p) {
+    return p.businessClaim.create({
+      data: {
+        placeId: input.placeId ?? null,
+        email: input.email,
+        fullName: input.fullName,
+        venueName: input.venueName ?? null,
+        message: input.message ?? null,
+        payload: (input.payload ?? {}) as any
+      }
+    });
+  }
+  const record = {
+    id: `bc-${Date.now()}`, ...input, status: "pending",
+    createdAt: new Date().toISOString()
+  };
+  mockClaims.unshift(record);
+  return record;
+}
+
+export async function listBusinessClaims() {
+  const p = getPrismaOrNull();
+  if (p) return p.businessClaim.findMany({ orderBy: { createdAt: "desc" }, take: 200 });
+  return mockClaims;
+}
+
+export async function updateBusinessClaimStatus(id: string, status: "approved" | "rejected") {
+  const p = getPrismaOrNull();
+  if (p) return p.businessClaim.update({ where: { id }, data: { status } });
+  const idx = mockClaims.findIndex((c) => c.id === id);
+  if (idx >= 0) mockClaims[idx].status = status;
+  return mockClaims[idx];
 }

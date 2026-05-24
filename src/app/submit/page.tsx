@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState , Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Check, Send } from "lucide-react";
 
-export default function SubmitPage() {
+function SubmitInner() {
   const sp = useSearchParams();
   const placeIdParam = sp.get("placeId") ?? "";
   const typeParam = (sp.get("type") as any) ?? "new-place";
@@ -233,5 +233,13 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <span className="text-xs uppercase tracking-[0.18em] text-white/40">{label}</span>
       <div className="mt-1.5">{children}</div>
     </label>
+  );
+}
+
+export default function SubmitPage() {
+  return (
+    <Suspense fallback={<div className="max-w-6xl mx-auto px-6 py-12 text-ink-400">Loading…</div>}>
+      <SubmitInner />
+    </Suspense>
   );
 }

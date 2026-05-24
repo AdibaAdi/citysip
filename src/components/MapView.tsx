@@ -1,7 +1,7 @@
 "use client";
 
 import "leaflet/dist/leaflet.css";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import type { PlaceWithDeals } from "@/types";
 import { useEffect, useMemo } from "react";
@@ -12,14 +12,49 @@ const pinIcon = (active: boolean) =>
     className: "",
     iconSize: [14, 14],
     iconAnchor: [7, 7],
-    html: `<div class="${active ? "pulse-pin" : "pulse-pin"}" ${
+    html: `<div class="pulse-pin" ${
       active ? "" : 'style="background:#56565F;box-shadow:0 0 0 2px #0a0a0c;"'
     }></div>`
   });
 
-function FitBounds({ places }: { places: PlaceWithDeals[] }) {
-  // No-op placeholder for future imperative fitting.
-  useEffect(() => {}, [places]);
+/**
+ * Imperatively keeps the map framed on the right area.
+ *
+ * Priority:
+ *  1. If places exist -> fit bounds around all place markers.
+ *  2. Else if a city center is provided -> recenter on that city.
+ *  3. Else -> leave the map where it is.
+ *
+ * This is necessary because react-leaflet's <MapContainer center> prop is
+ * only read once at mount; changing it later (e.g. when the user picks a
+ * new city) does nothing without this component.
+ */
+function MapController({
+  places,
+  center
+}: {
+  places: PlaceWithDeals[];
+  center?: { lat: number; lng: number };
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (places.length > 0) {
+      if (places.length === 1) {
+        map.setView([places[0].lat, places[0].lng], 14, { animate: true });
+      } else {
+        const bounds = L.latLngBounds(places.map((p) => [p.lat, p.lng]));
+        map.fitBounds(bounds, { padding: [48, 48], maxZoom: 15, animate: true });
+      }
+      return;
+    }
+    // No places -> still center on the selected city so the map is never
+    // stuck on a stale location (e.g. showing Chicago for Los Angeles).
+    if (center) {
+      map.setView([center.lat, center.lng], 12, { animate: true });
+    }
+  }, [places, center, map]);
+
   return null;
 }
 
@@ -30,29 +65,26 @@ export default function MapView({
   places: PlaceWithDeals[];
   center?: { lat: number; lng: number };
 }) {
-  const computed = useMemo(() => {
+  // Initial center: city if provided, else first place, else US center.
+  const initialCenter = useMemo(() => {
     if (center) return center;
-    if (places.length) {
-      const avgLat = places.reduce((s, p) => s + p.lat, 0) / places.length;
-      const avgLng = places.reduce((s, p) => s + p.lng, 0) / places.length;
-      return { lat: avgLat, lng: avgLng };
-    }
-    return { lat: 41.8781, lng: -87.6298 }; // Chicago default
-  }, [places, center]);
+    if (places.length) return { lat: places[0].lat, lng: places[0].lng };
+    return { lat: 39.8283, lng: -98.5795 };
+  }, [center, places]);
 
   return (
     <div className="rounded-2xl overflow-hidden border border-white/[0.06] h-[600px] relative">
       <MapContainer
-        center={[computed.lat, computed.lng]}
+        center={[initialCenter.lat, initialCenter.lng]}
         zoom={12}
         scrollWheelZoom
         className="w-full h-full"
       >
         <TileLayer
-          attribution='&copy; OpenStreetMap'
+          attribution="&copy; OpenStreetMap"
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        <FitBounds places={places} />
+        <MapController places={places} center={center} />
         {places.map((p) => (
           <Marker
             key={p.id}

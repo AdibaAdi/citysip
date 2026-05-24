@@ -45,16 +45,10 @@ export default function BusinessPage() {
     e.preventDefault();
     setLoading(true);
     try {
-      const res = await fetch("/api/submit", {
+      const res = await fetch("/api/business", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: "new-place",
-          payload: {
-            kind: "business-claim",
-            ...form
-          }
-        })
+        body: JSON.stringify(form)
       });
       if (res.ok) setSent(true);
     } finally {
@@ -148,7 +142,7 @@ export default function BusinessPage() {
               </div>
               <h2 className="display text-3xl mb-3">Claim received</h2>
               <p className="text-ink-300 max-w-md mx-auto">
-                Thanks for reaching out. We'll verify ownership and email you back within 24 hours
+                Thanks for reaching out. We&apos;ll verify ownership and email you back within 24 hours
                 with login details for your venue dashboard.
               </p>
               <Link href="/" className="ghost-btn mt-6 inline-flex">Back to home</Link>
@@ -157,7 +151,7 @@ export default function BusinessPage() {
             <>
               <h2 className="display text-3xl mb-2">Claim your venue</h2>
               <p className="text-ink-300 mb-8 text-sm">
-                We'll review and reach out within one business day. No commitment, no card required.
+                We&apos;ll review and reach out within one business day. No commitment, no card required.
               </p>
               <form onSubmit={onSubmit} className="grid sm:grid-cols-2 gap-4">
                 <Field label="Venue name" required>

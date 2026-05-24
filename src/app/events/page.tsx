@@ -57,7 +57,7 @@ export default function EventsPage() {
         <div className="relative max-w-6xl mx-auto px-6 pt-16 pb-10">
           <p className="text-xs uppercase tracking-wider text-ember-400 mb-2">CitySip · events</p>
           <h1 className="display text-5xl sm:text-6xl leading-[1.05]">
-            What's <span className="ember-text">on tonight</span>.
+            What&apos;s <span className="ember-text">on tonight</span>.
           </h1>
           <p className="mt-4 text-ink-300 max-w-xl">
             Trivia, live music, comedy mics, rooftop sets — everything happening in the next few hours,

@@ -120,3 +120,20 @@ export function rankScore(opts: {
   const dist = opts.distanceKm != null ? Math.max(0, 10 - opts.distanceKm) : 0;
   return r + live + featured + urgency + dist;
 }
+
+/** URL-safe slug from an arbitrary string (e.g. a venue name). */
+export function slugify(input: string): string {
+  return input
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "") // strip accents
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "place";
+}
+
+/** Normalized key for fuzzy duplicate matching (name + address). */
+export function dedupeKey(name: string, address?: string): string {
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  return `${norm(name)}|${norm(address ?? "")}`;
+}

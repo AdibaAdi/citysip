@@ -8,7 +8,7 @@ export async function GET(req: NextRequest) {
   const url = req.nextUrl;
   const get = (k: string) => url.searchParams.get(k);
   const filters: SearchFilters = {
-    citySlug:      get("citySlug")     ?? undefined,
+    citySlug:      get("citySlug")     ?? get("city") ?? undefined,
     q:             get("q")            ?? undefined,
     happeningNow:  get("happeningNow") === "1",
     endingSoon:    get("endingSoon")   === "1",

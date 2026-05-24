@@ -56,17 +56,27 @@ export default async function CityPage({ params }: { params: { slug: string } })
       <div className="mx-auto max-w-7xl px-5 lg:px-8 mt-10">
         <CityChips cities={cities} activeSlug={city.slug} />
 
-        <PlaceRail
-          title="Happening now"
-          caption={`Live deals across ${city.name}.`}
-          places={live}
-        />
+        {live.length > 0 ? (
+          <PlaceRail
+            title="Happening now"
+            caption={`Live deals across ${city.name} right now.`}
+            places={live}
+          />
+        ) : (
+          <PlaceRail
+            title={`Popular in ${city.name}`}
+            caption={`No live deals right now, but here are popular places in ${city.name}.`}
+            places={all.slice(0, 8)}
+          />
+        )}
 
-        <PlaceRail
-          title="Ending soon"
-          caption="Last call within 90 minutes."
-          places={ending}
-        />
+        {ending.length > 0 && (
+          <PlaceRail
+            title="Ending soon"
+            caption="Last call within 90 minutes."
+            places={ending}
+          />
+        )}
 
         <PlaceRail
           title={`All places in ${city.name}`}

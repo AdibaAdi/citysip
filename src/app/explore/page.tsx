@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState , Suspense } from "react";
 import dynamic from "next/dynamic";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Map, List, MapPin } from "lucide-react";
@@ -21,7 +21,7 @@ const MapView = dynamic(() => import("@/components/MapView"), {
 function urlToFilters(sp: URLSearchParams): SearchFilters {
   const g = (k: string) => sp.get(k);
   return {
-    citySlug:     g("citySlug")     ?? undefined,
+    citySlug:     g("citySlug")     ?? g("city") ?? undefined,
     q:            g("q")            ?? undefined,
     happeningNow: g("happeningNow") === "1",
     endingSoon:   g("endingSoon")   === "1",
@@ -46,7 +46,7 @@ function filtersToUrl(f: SearchFilters): string {
   return p.toString();
 }
 
-export default function ExplorePage() {
+function ExploreInner() {
   const sp = useSearchParams();
   const router = useRouter();
   const [filters, setFilters] = useState<SearchFilters>(() => urlToFilters(new URLSearchParams(sp.toString())));
@@ -95,6 +95,21 @@ export default function ExplorePage() {
     return { live, ending };
   }, [places]);
 
+  const activeCity = useMemo(
+    () => cities.find((c) => c.slug === filters.citySlug) ?? null,
+    [cities, filters.citySlug]
+  );
+
+  // Which optional filters are currently narrowing results?
+  const hasActiveFilters =
+    !!filters.happeningNow || !!filters.endingSoon || !!filters.startsSoon ||
+    !!filters.dealType || filters.minRating != null || filters.maxPrice != null ||
+    (filters.vibes != null && filters.vibes.length > 0);
+
+  // Clear filters but keep the selected city + search query.
+  const clearFilters = () =>
+    setFilters({ citySlug: filters.citySlug, q: filters.q });
+
   return (
     <div className="mx-auto max-w-7xl px-5 lg:px-8 pt-8 lg:pt-12">
       <div className="flex items-end justify-between flex-wrap gap-3">
@@ -126,7 +141,12 @@ export default function ExplorePage() {
       </div>
 
       <div className="mt-5">
-        <CityChips cities={cities} activeSlug={filters.citySlug} />
+        <CityChips
+          cities={cities}
+          activeSlug={filters.citySlug}
+          showAll
+          onSelect={(slug) => setFilters({ ...filters, citySlug: slug })}
+        />
       </div>
 
       <div className="mt-4">
@@ -136,7 +156,11 @@ export default function ExplorePage() {
       {/* View toggle */}
       <div className="mt-6 flex items-center justify-between">
         <p className="text-sm text-white/55">
-          {loading ? "Loading…" : `${places.length} ${places.length === 1 ? "place" : "places"}`}
+          {loading
+            ? "Loading…"
+            : `${places.length} ${places.length === 1 ? "place" : "places"}${
+                activeCity ? ` in ${activeCity.name}` : " across all cities"
+              }`}
         </p>
         <div className="inline-flex items-center bg-ink-800/60 border border-white/[0.06] rounded-full p-0.5 text-xs">
           {(["split", "list", "map"] as const).map((v) => (
@@ -171,8 +195,21 @@ export default function ExplorePage() {
               <SkeletonList />
             ) : places.length === 0 ? (
               <div className="glass rounded-2xl p-10 text-center text-white/55">
-                <p className="display text-xl">No spots match those filters.</p>
-                <p className="text-sm mt-2">Try removing a filter or asking the AI search above.</p>
+                <p className="display text-xl">
+                  {hasActiveFilters
+                    ? `No spots match those filters${activeCity ? ` in ${activeCity.name}` : ""}.`
+                    : `No places listed${activeCity ? ` in ${activeCity.name}` : ""} yet.`}
+                </p>
+                <p className="text-sm mt-2">
+                  {hasActiveFilters
+                    ? "Try clearing filters to see every place in this city."
+                    : "Try another city, or check back soon."}
+                </p>
+                {hasActiveFilters && (
+                  <button onClick={clearFilters} className="ember-btn mt-4 inline-flex">
+                    Clear filters
+                  </button>
+                )}
               </div>
             ) : (
               <div className={cn(
@@ -207,5 +244,13 @@ function SkeletonList() {
         </div>
       ))}
     </div>
+  );
+}
+
+export default function ExplorePage() {
+  return (
+    <Suspense fallback={<div className="max-w-6xl mx-auto px-6 py-12 text-ink-400">Loading…</div>}>
+      <ExploreInner />
+    </Suspense>
   );
 }
