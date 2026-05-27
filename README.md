@@ -10,6 +10,12 @@
 
 ---
 
+## Live Demo
+
+[Try CitySip](https://citysip-theta.vercel.app)
+
+---
+
 ## Zero-config quickstart
 
 ```bash
